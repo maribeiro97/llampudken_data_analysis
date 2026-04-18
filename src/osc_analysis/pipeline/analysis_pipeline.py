@@ -36,8 +36,10 @@ class AnalysisPipeline:
             spec = self.spectral.compute(processed)
 
             shot_tag = f"shot{processed.shot_number}_{processed.oscilloscope_id}"
-            time_fig = self.config.output_dir / "figures" / f"{shot_tag}_time.png"
-            freq_fig = self.config.output_dir / "figures" / f"{shot_tag}_fft.png"
+            png_dir = self.config.output_dir / "figures" / "png"
+            html_dir = self.config.output_dir / "figures" / "html"
+            time_fig = png_dir / f"{shot_tag}_time.png"
+            freq_fig = png_dir / f"{shot_tag}_fft.png"
 
             figure_paths.append(self.plotter.plot_time_series(processed, time_fig))
             figure_paths.append(self.plotter.plot_spectrum(spec, freq_fig, shot_tag))
