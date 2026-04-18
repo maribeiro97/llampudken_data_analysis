@@ -10,7 +10,7 @@ python scripts/run_pipeline.py
 ```
 
 Generated outputs are written under `outputs/figures` and `outputs/reports`.
-The pipeline emits static PNG plots under `outputs/figures/png` and interactive Plotly HTML files under `outputs/figures/html`.
+The pipeline now emits both static PNG plots and interactive Plotly HTML files.
 
 ## Project layout
 

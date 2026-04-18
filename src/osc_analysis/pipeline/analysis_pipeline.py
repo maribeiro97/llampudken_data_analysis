@@ -44,8 +44,8 @@ class AnalysisPipeline:
             figure_paths.append(self.plotter.plot_time_series(processed, time_fig))
             figure_paths.append(self.plotter.plot_spectrum(spec, freq_fig, shot_tag))
             if self.config.plot_style.export_interactive_html:
-                time_html = html_dir / f"{shot_tag}_time.html"
-                freq_html = html_dir / f"{shot_tag}_fft.html"
+                time_html = self.config.output_dir / "figures" / f"{shot_tag}_time.html"
+                freq_html = self.config.output_dir / "figures" / f"{shot_tag}_fft.html"
                 figure_paths.append(self.plotter.plot_time_series_html(processed, time_html))
                 figure_paths.append(self.plotter.plot_spectrum_html(spec, freq_html, shot_tag))
 
