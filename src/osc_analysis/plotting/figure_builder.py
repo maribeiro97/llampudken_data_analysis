@@ -5,6 +5,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import plotly.graph_objects as go
+import seaborn as sns
 
 from osc_analysis.config import PlotStyleConfig
 from osc_analysis.models import SignalRecord, SpectrumResults
