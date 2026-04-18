@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
+from osc_analysis.calibration import delay_offsets_s, get_calibration
 from osc_analysis.models import SignalRecord
 
 
@@ -25,10 +26,16 @@ class DataLoader:
     def load_file(self, file_path: Path) -> SignalRecord:
         data = np.loadtxt(file_path)
         time = data[:, 0]
-        channels = {f"ch{i}": data[:, i] for i in range(1, data.shape[1])}
+        shot_number, date_code, oscilloscope_id = self.parse_filename(file_path)
+        calibration = get_calibration(oscilloscope_id, channel_count=data.shape[1] - 1)
+        channels = {
+            name: data[:, i] * factor
+            for i, (name, factor) in enumerate(
+                zip(calibration.channel_names, calibration.calibration_factors), start=1
+            )
+        }
         dt = float(np.mean(np.diff(time))) if len(time) > 1 else 1.0
         sampling_rate_hz = 1.0 / dt if dt else 0.0
-        shot_number, date_code, oscilloscope_id = self.parse_filename(file_path)
         return SignalRecord(
             shot_number=shot_number,
             oscilloscope_id=oscilloscope_id,
@@ -37,4 +44,10 @@ class DataLoader:
             time=time,
             channels=channels,
             sampling_rate_hz=sampling_rate_hz,
+            metadata={
+                "axis_labels": calibration.axis_labels,
+                "channel_delays_ns": calibration.channel_delay_ns,
+                "channel_delay_offsets_s": delay_offsets_s(calibration.channel_delay_ns),
+                "calibration_factors": calibration.calibration_factors,
+            },
         )
