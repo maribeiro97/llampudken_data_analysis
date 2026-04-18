@@ -10,7 +10,7 @@ python scripts/run_pipeline.py
 ```
 
 Generated outputs are written under `outputs/figures` and `outputs/reports`.
-The pipeline emits static PNG plots under `outputs/figures/png/time` and `outputs/figures/png/fft`, and interactive Plotly HTML files under `outputs/figures/html/time` and `outputs/figures/html/fft`.
+The pipeline emits static PNG plots under `outputs/figures/png/time/shotNNNN` and `outputs/figures/png/fft/shotNNNN`, and interactive Plotly HTML files under `outputs/figures/html/time/shotNNNN` and `outputs/figures/html/fft/shotNNNN`.
 
 ## Project layout
 
