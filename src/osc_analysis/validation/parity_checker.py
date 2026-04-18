@@ -15,7 +15,7 @@ class ParityChecker:
 
     def compare_figure_counts(self, matlab_dir: Path, python_dir: Path) -> ParityResult:
         matlab_count = len(list(matlab_dir.glob("*.png")))
-        python_count = len(list(python_dir.glob("*.png")))
+        python_count = len(list(python_dir.rglob("*.png")))
         passed = matlab_count == python_count and python_count > 0
         return ParityResult(
             passed=passed,
