@@ -13,7 +13,7 @@ def main() -> None:
         input_dir=repo_root / "osc_data",
         output_dir=repo_root / "outputs",
     )
-    report = AnalysisPipeline(config).run(max_files=3)
+    report = AnalysisPipeline(config).run()
     print(f"Processed {report.files_processed} files.")
     print(f"Generated {len(report.figure_paths)} figures.")
     for note in report.notes:
