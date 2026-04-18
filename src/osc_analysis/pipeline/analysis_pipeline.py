@@ -36,18 +36,16 @@ class AnalysisPipeline:
             spec = self.spectral.compute(processed)
 
             shot_tag = f"shot{processed.shot_number}_{processed.oscilloscope_id}"
-            png_time_dir = self.config.output_dir / "figures" / "png" / "time"
-            png_fft_dir = self.config.output_dir / "figures" / "png" / "fft"
-            html_time_dir = self.config.output_dir / "figures" / "html" / "time"
-            html_fft_dir = self.config.output_dir / "figures" / "html" / "fft"
-            time_fig = png_time_dir / f"{shot_tag}_time.png"
-            freq_fig = png_fft_dir / f"{shot_tag}_fft.png"
+            png_dir = self.config.output_dir / "figures" / "png"
+            html_dir = self.config.output_dir / "figures" / "html"
+            time_fig = png_dir / f"{shot_tag}_time.png"
+            freq_fig = png_dir / f"{shot_tag}_fft.png"
 
             figure_paths.append(self.plotter.plot_time_series(processed, time_fig))
             figure_paths.append(self.plotter.plot_spectrum(spec, freq_fig, shot_tag))
             if self.config.plot_style.export_interactive_html:
-                time_html = html_time_dir / f"{shot_tag}_time.html"
-                freq_html = html_fft_dir / f"{shot_tag}_fft.html"
+                time_html = self.config.output_dir / "figures" / f"{shot_tag}_time.html"
+                freq_html = self.config.output_dir / "figures" / f"{shot_tag}_fft.html"
                 figure_paths.append(self.plotter.plot_time_series_html(processed, time_html))
                 figure_paths.append(self.plotter.plot_spectrum_html(spec, freq_html, shot_tag))
 
