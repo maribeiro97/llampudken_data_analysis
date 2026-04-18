@@ -10,10 +10,11 @@ python scripts/run_pipeline.py
 ```
 
 Generated outputs are written under `outputs/figures` and `outputs/reports`.
+The pipeline now emits both static PNG plots and interactive Plotly HTML files.
 
 ## Project layout
 
-- `src/osc_analysis/io`: file loading/parsing.
+- `src/osc_analysis/io`: file loading/parsing and channel calibration from `OSC_CALIBRATIONS.py`.
 - `src/osc_analysis/preprocessing`: baseline correction and detrending.
 - `src/osc_analysis/analysis`: feature extraction and spectral analysis.
 - `src/osc_analysis/plotting`: matplotlib figure generation.

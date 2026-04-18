@@ -17,6 +17,7 @@ class PlotStyleConfig:
 
     style: str = "dark_background"
     dpi: int = 120
+    export_interactive_html: bool = True
 
 
 @dataclass(frozen=True)
