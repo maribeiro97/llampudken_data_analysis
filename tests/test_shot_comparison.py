@@ -39,17 +39,37 @@ def test_compare_metrics_returns_expected_keys() -> None:
     assert metrics["peak_delta"] > 0.0
 
 
-def test_compare_plot_outputs_are_written(tmp_path: Path) -> None:
+def test_range_average_returns_ci_bands() -> None:
     builder = FigureBuilder(PlotStyleConfig())
-    shot_a = _make_record("1001", 0.0)
-    shot_b = _make_record("1002", 0.25)
+    range_records = [
+        _make_record("1001", 0.0),
+        _make_record("1002", 0.2),
+        _make_record("1003", -0.1),
+    ]
+    stats = builder.compute_range_average_with_ci(range_records, channel_name="CH1")
 
-    overlay = builder.plot_shot_overlay(shot_a, shot_b, tmp_path / "overlay.png", channel_name="CH1")
-    heatmap = builder.plot_shot_difference_heatmap(
-        shot_a, shot_b, tmp_path / "diff_heatmap.png", channel_name="CH1"
+    assert stats["sample_count"] == 3
+    assert stats["time"].shape == stats["mean"].shape
+    assert stats["lower_ci"].shape == stats["upper_ci"].shape
+    assert np.all(stats["upper_ci"] >= stats["lower_ci"])
+
+
+def test_range_plot_outputs_are_written(tmp_path: Path) -> None:
+    builder = FigureBuilder(PlotStyleConfig())
+    range_a = [_make_record("1001", 0.0), _make_record("1002", 0.1), _make_record("1003", 0.2)]
+    range_b = [_make_record("1004", 0.3), _make_record("1005", 0.4), _make_record("1006", 0.5)]
+
+    range_a_path = builder.plot_range_average_with_ci(
+        range_a, tmp_path / "range_a_mean_ci.png", channel_name="CH1", label="A"
     )
-    kde = builder.plot_shot_kde_panel(shot_a, shot_b, tmp_path / "kde_panel.png", channel_name="CH1")
+    range_compare_path = builder.plot_two_ranges_with_ci(
+        range_a,
+        range_b,
+        tmp_path / "range_compare.png",
+        channel_name="CH1",
+        label_a="A",
+        label_b="B",
+    )
 
-    assert overlay.exists()
-    assert heatmap.exists()
-    assert kde.exists()
+    assert range_a_path.exists()
+    assert range_compare_path.exists()
