@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -69,6 +70,8 @@ class ShotComparisonGUI(QMainWindow):
         logger.info("Loaded shot index from %s with %d shots.", self.config.input_dir, len(self.index))
 
         self._records_cache: dict[Path, object] = {}
+        self._temp_dir = Path(tempfile.mkdtemp(prefix="osc_plotly_"))
+        logger.info("Using temporary Plotly output directory: %s", self._temp_dir)
         self.shots = sorted(self.index.keys(), key=int)
         self.tabs: dict[str, ScopeTabState] = {}
 
@@ -313,14 +316,22 @@ class ShotComparisonGUI(QMainWindow):
 
         try:
             fig = self._build_plotly_figure(scope, channel_name)
-            html = fig.to_html(
+            html_path = self._temp_dir / f"{scope}.html"
+            fig.write_html(
+                str(html_path),
                 full_html=True,
-                include_plotlyjs="inline",
+                include_plotlyjs="directory",
                 config={"responsive": True, "displaylogo": False},
             )
-            state.web_view.setHtml(html, QUrl("about:blank"))
+            state.web_view.load(QUrl.fromLocalFile(str(html_path.resolve())))
             state.message_label.setText("Interactive plot updated.")
-            logger.info("Plotted scope=%s channel=%s traces=%d.", scope, channel_name, len(fig.data))
+            logger.info(
+                "Plotted scope=%s channel=%s traces=%d html=%s.",
+                scope,
+                channel_name,
+                len(fig.data),
+                html_path,
+            )
         except Exception as exc:  # pragma: no cover - runtime GUI safety
             state.message_label.setText(f"Plot failed: {exc}")
             logger.exception("Plot failed for scope=%s channel=%s", scope, channel_name)
