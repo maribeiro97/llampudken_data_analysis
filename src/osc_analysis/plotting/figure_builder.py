@@ -31,8 +31,7 @@ class FigureBuilder:
         ax.set_ylabel(axis_labels[1])
         ax.legend(loc="best")
         fig.tight_layout()
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(out_path)
+        self._save_matplotlib_outputs(fig, out_path)
         plt.close(fig)
         self.plot_time_series_html(record, out_path.with_suffix(".html"))
         return out_path
@@ -71,8 +70,7 @@ class FigureBuilder:
         ax.set_ylabel("Amplitude [a.u.]")
         ax.legend(loc="best")
         fig.tight_layout()
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(out_path)
+        self._save_matplotlib_outputs(fig, out_path)
         plt.close(fig)
         self.plot_spectrum_html(spectrum, out_path.with_suffix(".html"), shot_label)
         return out_path
@@ -121,8 +119,7 @@ class FigureBuilder:
         ax.set_ylabel(axis_labels[1])
         ax.legend(loc="best")
         fig.tight_layout()
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(out_path)
+        self._save_matplotlib_outputs(fig, out_path)
         plt.close(fig)
         self.plot_shot_overlay_html(record_a, record_b, out_path.with_suffix(".html"), channel_name=chosen_channel)
         return out_path
@@ -210,8 +207,7 @@ class FigureBuilder:
         ax.set_ylabel(axis_labels[1])
         ax.legend(loc="best")
         fig.tight_layout()
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(out_path)
+        self._save_matplotlib_outputs(fig, out_path)
         plt.close(fig)
         self.plot_range_average_with_ci_html(
             records,
@@ -251,8 +247,7 @@ class FigureBuilder:
         ax.set_ylabel(axis_labels[1])
         ax.legend(loc="best")
         fig.tight_layout()
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(out_path)
+        self._save_matplotlib_outputs(fig, out_path)
         plt.close(fig)
         self.plot_two_ranges_with_ci_html(
             range_a_records,
@@ -300,8 +295,7 @@ class FigureBuilder:
         ax.set_ylabel(axis_labels[1])
         ax.legend(loc="best")
         fig.tight_layout()
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(out_path)
+        self._save_matplotlib_outputs(fig, out_path)
         plt.close(fig)
         self.plot_channel_mean_across_shots_html(
             records,
@@ -525,3 +519,10 @@ class FigureBuilder:
             ]
         )
         return common_t, stacked
+
+    @staticmethod
+    def _save_matplotlib_outputs(fig: plt.Figure, out_path: Path) -> None:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(out_path, bbox_inches="tight")
+        fig.savefig(out_path.with_suffix(".pdf"), bbox_inches="tight")
+        fig.savefig(out_path.with_suffix(".svg"), bbox_inches="tight")

@@ -15,8 +15,8 @@ class PreprocessingConfig:
 class PlotStyleConfig:
     """Plot style controls used for all generated figures."""
 
-    style: str = "dark_background"
-    dpi: int = 120
+    style: str = "default"
+    dpi: int = 300
     export_interactive_html: bool = True
 
 

@@ -46,7 +46,11 @@ class AnalysisPipeline:
             figure_paths.append(self.plotter.plot_time_series(processed, time_fig))
             figure_paths.append(self.plotter.plot_spectrum(spec, freq_fig, shot_tag))
             figure_paths.append(time_fig.with_suffix(".html"))
+            figure_paths.append(time_fig.with_suffix(".pdf"))
+            figure_paths.append(time_fig.with_suffix(".svg"))
             figure_paths.append(freq_fig.with_suffix(".html"))
+            figure_paths.append(freq_fig.with_suffix(".pdf"))
+            figure_paths.append(freq_fig.with_suffix(".svg"))
 
             notes.append(
                 f"{shot_tag}: peaks={feat.channel_peak} rms={feat.channel_rms}"
