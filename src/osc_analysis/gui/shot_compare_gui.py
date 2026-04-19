@@ -36,6 +36,7 @@ except ImportError as exc:  # pragma: no cover - platform dependent
 
 SINGLE_SHOT_MODE = "Single shot (all oscilloscopes)"
 COMPARE_MODE = "Compare two shots"
+ALL_CHANNELS_OPTION = "All channels"
 
 
 @dataclass
@@ -211,7 +212,7 @@ class ShotComparisonGUI(QMainWindow):
         if len(active_shots) == 1:
             shot = active_shots[0]
             record = self._load_record(self.index[shot][scope])
-            return sorted(record.channels.keys())
+            return [ALL_CHANNELS_OPTION, *sorted(record.channels.keys())]
 
         shot_a, shot_b = active_shots
         if scope not in self.index.get(shot_a, {}) or scope not in self.index.get(shot_b, {}):
@@ -219,7 +220,14 @@ class ShotComparisonGUI(QMainWindow):
 
         record_a = self._load_record(self.index[shot_a][scope])
         record_b = self._load_record(self.index[shot_b][scope])
-        return sorted(set(record_a.channels.keys()) & set(record_b.channels.keys()))
+        common_channels = sorted(set(record_a.channels.keys()) & set(record_b.channels.keys()))
+        return [ALL_CHANNELS_OPTION, *common_channels]
+
+    @staticmethod
+    def _selected_channels(record, selected_channel: str) -> list[str]:
+        if selected_channel == ALL_CHANNELS_OPTION:
+            return sorted(record.channels.keys())
+        return [selected_channel]
 
     def _load_record(self, path: Path):
         if path not in self._records_cache:
@@ -233,14 +241,15 @@ class ShotComparisonGUI(QMainWindow):
         if len(active_shots) == 1:
             shot = active_shots[0]
             record = self._load_record(self.index[shot][scope])
-            fig.add_trace(
-                go.Scatter(
-                    x=record.time,
-                    y=record.channels[channel_name],
-                    mode="lines",
-                    name=f"Shot {shot}",
+            for selected_channel in self._selected_channels(record, channel_name):
+                fig.add_trace(
+                    go.Scatter(
+                        x=record.time,
+                        y=record.channels[selected_channel],
+                        mode="lines",
+                        name=f"Shot {shot} - {selected_channel}",
+                    )
                 )
-            )
             axis_labels = record.metadata.get("axis_labels", ("Time [s]", "Signal [a.u.]"))
             fig.update_layout(
                 template="plotly_dark",
@@ -253,22 +262,25 @@ class ShotComparisonGUI(QMainWindow):
         shot_a, shot_b = active_shots
         record_a = self._load_record(self.index[shot_a][scope])
         record_b = self._load_record(self.index[shot_b][scope])
-        fig.add_trace(
-            go.Scatter(
-                x=record_a.time,
-                y=record_a.channels[channel_name],
-                mode="lines",
-                name=f"Shot {shot_a}",
+        for selected_channel in self._selected_channels(record_a, channel_name):
+            if selected_channel not in record_b.channels:
+                continue
+            fig.add_trace(
+                go.Scatter(
+                    x=record_a.time,
+                    y=record_a.channels[selected_channel],
+                    mode="lines",
+                    name=f"Shot {shot_a} - {selected_channel}",
+                )
             )
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=record_b.time,
-                y=record_b.channels[channel_name],
-                mode="lines",
-                name=f"Shot {shot_b}",
+            fig.add_trace(
+                go.Scatter(
+                    x=record_b.time,
+                    y=record_b.channels[selected_channel],
+                    mode="lines",
+                    name=f"Shot {shot_b} - {selected_channel}",
+                )
             )
-        )
         axis_labels = record_a.metadata.get("axis_labels", ("Time [s]", "Signal [a.u.]"))
         fig.update_layout(
             template="plotly_dark",
@@ -285,10 +297,13 @@ class ShotComparisonGUI(QMainWindow):
             state.message_label.setText("No channel available for this selection.")
             return
 
-        fig = self._build_plotly_figure(scope, channel_name)
-        html = fig.to_html(full_html=False, include_plotlyjs="cdn")
-        state.web_view.setHtml(html)
-        state.message_label.setText("Interactive plot updated.")
+        try:
+            fig = self._build_plotly_figure(scope, channel_name)
+            html = fig.to_html(full_html=False, include_plotlyjs=True)
+            state.web_view.setHtml(html)
+            state.message_label.setText("Interactive plot updated.")
+        except Exception as exc:  # pragma: no cover - runtime GUI safety
+            state.message_label.setText(f"Plot failed: {exc}")
 
     def plot_all_tabs(self) -> None:
         for scope in self.tabs:
