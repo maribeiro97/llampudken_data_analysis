@@ -70,6 +70,16 @@ def test_range_plot_outputs_are_written(tmp_path: Path) -> None:
         label_a="A",
         label_b="B",
     )
+    mean_only_path = builder.plot_channel_mean_across_shots(
+        range_a,
+        tmp_path / "range_a_mean_only.png",
+        channel_name="CH1",
+        label="A mean only",
+    )
 
     assert range_a_path.exists()
     assert range_compare_path.exists()
+    assert mean_only_path.exists()
+    assert range_a_path.with_suffix(".html").exists()
+    assert range_compare_path.with_suffix(".html").exists()
+    assert mean_only_path.with_suffix(".html").exists()

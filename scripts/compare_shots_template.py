@@ -100,7 +100,6 @@ def main() -> None:
         channel_name=channel_name,
         label=label_b,
     )
-
     stats_a = figure_builder.compute_range_average_with_ci(
         range_a_records,
         channel_name=channel_name,
@@ -109,11 +108,18 @@ def main() -> None:
         range_b_records,
         channel_name=channel_name,
     )
+    range_a_mean_only_path = figure_builder.plot_channel_mean_across_shots(
+        range_a_records,
+        compare_dir / f"{stem}_range_a_mean_only.png",
+        channel_name=str(stats_a["channel_name"]),
+        label=f"{label_a} mean",
+    )
 
     print("Generated shot-range comparison figures:")
     print(f"- Two-range comparison: {range_compare_path}")
     print(f"- Range A mean+CI: {range_a_path}")
     print(f"- Range B mean+CI: {range_b_path}")
+    print(f"- Range A mean only: {range_a_mean_only_path}")
     print("Range summary:")
     print(
         f"- {label_a} ({stats_a['sample_count']} files), channel={stats_a['channel_name']},"

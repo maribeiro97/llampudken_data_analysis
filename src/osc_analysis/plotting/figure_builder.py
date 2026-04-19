@@ -34,6 +34,7 @@ class FigureBuilder:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(out_path)
         plt.close(fig)
+        self.plot_time_series_html(record, out_path.with_suffix(".html"))
         return out_path
 
     def plot_time_series_html(self, record: SignalRecord, out_path: Path) -> Path:
@@ -73,6 +74,7 @@ class FigureBuilder:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(out_path)
         plt.close(fig)
+        self.plot_spectrum_html(spectrum, out_path.with_suffix(".html"), shot_label)
         return out_path
 
     def plot_spectrum_html(self, spectrum: SpectrumResults, out_path: Path, shot_label: str) -> Path:
@@ -122,6 +124,7 @@ class FigureBuilder:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(out_path)
         plt.close(fig)
+        self.plot_shot_overlay_html(record_a, record_b, out_path.with_suffix(".html"), channel_name=chosen_channel)
         return out_path
 
     def compute_shot_comparison_metrics(
@@ -210,6 +213,13 @@ class FigureBuilder:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(out_path)
         plt.close(fig)
+        self.plot_range_average_with_ci_html(
+            records,
+            out_path.with_suffix(".html"),
+            channel_name=stats["channel_name"],
+            label=series_label,
+            color=color,
+        )
         return out_path
 
     def plot_two_ranges_with_ci(
@@ -244,6 +254,223 @@ class FigureBuilder:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(out_path)
         plt.close(fig)
+        self.plot_two_ranges_with_ci_html(
+            range_a_records,
+            range_b_records,
+            out_path.with_suffix(".html"),
+            channel_name=chosen_channel,
+            label_a=label_a,
+            label_b=label_b,
+        )
+        return out_path
+
+    def compute_channel_mean_curve(
+        self,
+        records: list[SignalRecord],
+        channel_name: str,
+    ) -> dict[str, np.ndarray | str | int]:
+        """Compute aligned mean curve for a single channel across many shots."""
+        if len(records) < 1:
+            raise ValueError("At least one record is required.")
+        common_t, stacked = self._stack_records_on_common_time(records, channel_name)
+        return {
+            "channel_name": channel_name,
+            "time": common_t,
+            "mean": np.mean(stacked, axis=0),
+            "sample_count": stacked.shape[0],
+        }
+
+    def plot_channel_mean_across_shots(
+        self,
+        records: list[SignalRecord],
+        out_path: Path,
+        channel_name: str,
+        label: str = "Mean curve",
+        color: str = "#55A868",
+    ) -> Path:
+        """Plot only the mean curve for one channel across multiple shots."""
+        apply_style(self.style.style)
+        mean_stats = self.compute_channel_mean_curve(records, channel_name)
+        axis_labels = records[0].metadata.get("axis_labels", ("Time [s]", "Signal [a.u.]"))
+
+        fig, ax = plt.subplots(figsize=(10, 5), dpi=self.style.dpi)
+        ax.plot(mean_stats["time"], mean_stats["mean"], color=color, label=f"{label} (n={mean_stats['sample_count']})")
+        ax.set_title(f"Mean curve across shots ({channel_name})")
+        ax.set_xlabel(axis_labels[0])
+        ax.set_ylabel(axis_labels[1])
+        ax.legend(loc="best")
+        fig.tight_layout()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(out_path)
+        plt.close(fig)
+        self.plot_channel_mean_across_shots_html(
+            records,
+            out_path.with_suffix(".html"),
+            channel_name=channel_name,
+            label=label,
+            color=color,
+        )
+        return out_path
+
+    def plot_shot_overlay_html(
+        self,
+        record_a: SignalRecord,
+        record_b: SignalRecord,
+        out_path: Path,
+        channel_name: str | None = None,
+    ) -> Path:
+        """HTML counterpart for shot overlay plot."""
+        chosen_channel = channel_name or self._resolve_channel_name(record_a, record_b)
+        axis_labels = record_a.metadata.get("axis_labels", ("Time [s]", "Signal [a.u.]"))
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=record_a.time,
+                y=record_a.channels[chosen_channel],
+                mode="lines",
+                name=f"Shot {record_a.shot_number}",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=record_b.time,
+                y=record_b.channels[chosen_channel],
+                mode="lines",
+                name=f"Shot {record_b.shot_number}",
+            )
+        )
+        fig.update_layout(
+            template="plotly_dark",
+            title=f"Shot overlay ({chosen_channel})",
+            xaxis_title=axis_labels[0],
+            yaxis_title=axis_labels[1],
+        )
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.write_html(out_path, include_plotlyjs="cdn")
+        return out_path
+
+    def plot_range_average_with_ci_html(
+        self,
+        records: list[SignalRecord],
+        out_path: Path,
+        channel_name: str | None = None,
+        label: str | None = None,
+        color: str = "#4C72B0",
+    ) -> Path:
+        """HTML counterpart for one shot-range mean+CI plot."""
+        stats = self.compute_range_average_with_ci(records, channel_name=channel_name)
+        axis_labels = records[0].metadata.get("axis_labels", ("Time [s]", "Signal [a.u.]"))
+        series_label = label or f"Shots {records[0].shot_number}-{records[-1].shot_number}"
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(x=stats["time"], y=stats["upper_ci"], mode="lines", line={"width": 0}, showlegend=False)
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=stats["time"],
+                y=stats["lower_ci"],
+                mode="lines",
+                line={"width": 0},
+                fill="tonexty",
+                fillcolor="rgba(76, 114, 176, 0.25)",
+                name="95% CI",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(x=stats["time"], y=stats["mean"], mode="lines", line={"color": color}, name=f"{series_label} mean")
+        )
+        fig.update_layout(
+            template="plotly_dark",
+            title=f"Range average with confidence interval ({stats['channel_name']})",
+            xaxis_title=axis_labels[0],
+            yaxis_title=axis_labels[1],
+        )
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.write_html(out_path, include_plotlyjs="cdn")
+        return out_path
+
+    def plot_two_ranges_with_ci_html(
+        self,
+        range_a_records: list[SignalRecord],
+        range_b_records: list[SignalRecord],
+        out_path: Path,
+        channel_name: str | None = None,
+        label_a: str = "Range A",
+        label_b: str = "Range B",
+    ) -> Path:
+        """HTML counterpart for two shot-range comparison."""
+        chosen_channel = channel_name or self._resolve_channel_name_for_many(range_a_records + range_b_records)
+        range_a = self.compute_range_average_with_ci(range_a_records, channel_name=chosen_channel)
+        range_b = self.compute_range_average_with_ci(range_b_records, channel_name=chosen_channel)
+        axis_labels = range_a_records[0].metadata.get("axis_labels", ("Time [s]", "Signal [a.u.]"))
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=range_a["time"], y=range_a["upper_ci"], mode="lines", line={"width": 0}, showlegend=False))
+        fig.add_trace(
+            go.Scatter(
+                x=range_a["time"],
+                y=range_a["lower_ci"],
+                mode="lines",
+                line={"width": 0},
+                fill="tonexty",
+                fillcolor="rgba(76, 114, 176, 0.25)",
+                name=f"{label_a} 95% CI",
+            )
+        )
+        fig.add_trace(go.Scatter(x=range_a["time"], y=range_a["mean"], mode="lines", line={"color": "#4C72B0"}, name=f"{label_a} mean"))
+        fig.add_trace(go.Scatter(x=range_b["time"], y=range_b["upper_ci"], mode="lines", line={"width": 0}, showlegend=False))
+        fig.add_trace(
+            go.Scatter(
+                x=range_b["time"],
+                y=range_b["lower_ci"],
+                mode="lines",
+                line={"width": 0},
+                fill="tonexty",
+                fillcolor="rgba(221, 132, 82, 0.25)",
+                name=f"{label_b} 95% CI",
+            )
+        )
+        fig.add_trace(go.Scatter(x=range_b["time"], y=range_b["mean"], mode="lines", line={"color": "#DD8452"}, name=f"{label_b} mean"))
+        fig.update_layout(
+            template="plotly_dark",
+            title=f"Shot-range comparison with confidence intervals ({chosen_channel})",
+            xaxis_title=axis_labels[0],
+            yaxis_title=axis_labels[1],
+        )
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.write_html(out_path, include_plotlyjs="cdn")
+        return out_path
+
+    def plot_channel_mean_across_shots_html(
+        self,
+        records: list[SignalRecord],
+        out_path: Path,
+        channel_name: str,
+        label: str = "Mean curve",
+        color: str = "#55A868",
+    ) -> Path:
+        """HTML counterpart for channel mean across shots."""
+        mean_stats = self.compute_channel_mean_curve(records, channel_name)
+        axis_labels = records[0].metadata.get("axis_labels", ("Time [s]", "Signal [a.u.]"))
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=mean_stats["time"],
+                y=mean_stats["mean"],
+                mode="lines",
+                line={"color": color},
+                name=f"{label} (n={mean_stats['sample_count']})",
+            )
+        )
+        fig.update_layout(
+            template="plotly_dark",
+            title=f"Mean curve across shots ({channel_name})",
+            xaxis_title=axis_labels[0],
+            yaxis_title=axis_labels[1],
+        )
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.write_html(out_path, include_plotlyjs="cdn")
         return out_path
 
     @staticmethod
