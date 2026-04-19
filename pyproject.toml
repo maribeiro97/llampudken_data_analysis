@@ -12,6 +12,7 @@ dependencies = [
   "matplotlib",
   "plotly",
   "seaborn",
+  "PySide6",
 ]
 
 [tool.setuptools]
