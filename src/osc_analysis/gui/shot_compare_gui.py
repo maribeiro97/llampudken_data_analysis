@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+
+# Ensure Matplotlib binds to the same Qt wrapper used by this GUI.
+# Without this, Matplotlib may pick PyQt while the app uses PySide6,
+# causing QWidget type mismatches when embedding the canvas.
+os.environ.setdefault("QT_API", "pyside6")
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
