@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +28,7 @@ try:
         QVBoxLayout,
         QWidget,
     )
+    from PySide6.QtCore import QUrl
     from PySide6.QtWebEngineWidgets import QWebEngineView
 except ImportError as exc:  # pragma: no cover - platform dependent
     raise RuntimeError(
@@ -37,6 +39,7 @@ except ImportError as exc:  # pragma: no cover - platform dependent
 SINGLE_SHOT_MODE = "Single shot (all oscilloscopes)"
 COMPARE_MODE = "Compare two shots"
 ALL_CHANNELS_OPTION = "All channels"
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -63,6 +66,7 @@ class ShotComparisonGUI(QMainWindow):
         self.config = config or PipelineConfig(input_dir=Path("osc_data"), output_dir=Path("outputs"))
         self.loader = loader_factory(self.config.input_dir)
         self.index = build_shot_scope_index(self.loader)
+        logger.info("Loaded shot index from %s with %d shots.", self.config.input_dir, len(self.index))
 
         self._records_cache: dict[Path, object] = {}
         self.shots = sorted(self.index.keys(), key=int)
@@ -132,6 +136,12 @@ class ShotComparisonGUI(QMainWindow):
 
         self._refresh_scope_hint()
         self._rebuild_tabs()
+        logger.info(
+            "Selection changed | mode=%s | shots=%s | scopes=%s",
+            self.mode_combo.currentText(),
+            self._active_shots(),
+            self._active_scopes(),
+        )
 
     def _active_shots(self) -> list[str]:
         if self.mode_combo.currentText() == SINGLE_SHOT_MODE:
@@ -171,6 +181,7 @@ class ShotComparisonGUI(QMainWindow):
     def _rebuild_tabs(self) -> None:
         self.notebook.clear()
         self.tabs.clear()
+        logger.info("Rebuilding oscilloscope tabs.")
 
         for scope in self._active_scopes():
             tab = QWidget()
@@ -182,6 +193,7 @@ class ShotComparisonGUI(QMainWindow):
             channel_combo = QComboBox()
             channels = self._channels_for_scope(scope)
             channel_combo.addItems(channels)
+            channel_combo.currentTextChanged.connect(lambda _text, s=scope: self.plot_for_scope(s))
             top_bar.addWidget(channel_combo)
 
             message = QLabel("Ready to plot." if channels else "No available channels for current selection.")
@@ -204,6 +216,7 @@ class ShotComparisonGUI(QMainWindow):
                 web_view=web_view,
             )
             self.notebook.addTab(tab, scope)
+            logger.info("Created tab for scope=%s with %d channel options.", scope, len(channels))
 
         self.plot_all_tabs()
 
@@ -295,15 +308,22 @@ class ShotComparisonGUI(QMainWindow):
         channel_name = state.channel_combo.currentText()
         if not channel_name:
             state.message_label.setText("No channel available for this selection.")
+            logger.warning("Skipping plot for scope=%s: no channel selected.", scope)
             return
 
         try:
             fig = self._build_plotly_figure(scope, channel_name)
-            html = fig.to_html(full_html=False, include_plotlyjs=True)
-            state.web_view.setHtml(html)
+            html = fig.to_html(
+                full_html=True,
+                include_plotlyjs="inline",
+                config={"responsive": True, "displaylogo": False},
+            )
+            state.web_view.setHtml(html, QUrl("about:blank"))
             state.message_label.setText("Interactive plot updated.")
+            logger.info("Plotted scope=%s channel=%s traces=%d.", scope, channel_name, len(fig.data))
         except Exception as exc:  # pragma: no cover - runtime GUI safety
             state.message_label.setText(f"Plot failed: {exc}")
+            logger.exception("Plot failed for scope=%s channel=%s", scope, channel_name)
 
     def plot_all_tabs(self) -> None:
         for scope in self.tabs:
@@ -311,6 +331,11 @@ class ShotComparisonGUI(QMainWindow):
 
 
 def launch_shot_comparison_gui(data_dir: Path = Path("osc_data")) -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
+    logger.info("Launching ShotComparisonGUI with data_dir=%s", data_dir)
     app = QApplication.instance() or QApplication(sys.argv)
     config = PipelineConfig(input_dir=data_dir, output_dir=Path("outputs"))
     window = ShotComparisonGUI(config=config)
