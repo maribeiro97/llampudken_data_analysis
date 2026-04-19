@@ -1,18 +1,11 @@
 from __future__ import annotations
 
-import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-# Ensure Matplotlib binds to the same Qt wrapper used by this GUI.
-# Without this, Matplotlib may pick PyQt while the app uses PySide6,
-# causing QWidget type mismatches when embedding the canvas.
-os.environ.setdefault("QT_API", "pyside6")
-
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
-from matplotlib.figure import Figure
+import plotly.graph_objects as go
 
 from osc_analysis.config import PipelineConfig
 from osc_analysis.gui.data_index import (
@@ -34,22 +27,28 @@ try:
         QVBoxLayout,
         QWidget,
     )
+    from PySide6.QtWebEngineWidgets import QWebEngineView
 except ImportError as exc:  # pragma: no cover - platform dependent
-    raise RuntimeError("PySide6 is required to run the shot comparison GUI.") from exc
+    raise RuntimeError(
+        "PySide6 with QtWebEngine is required for the interactive Plotly GUI."
+    ) from exc
+
+
+SINGLE_SHOT_MODE = "Single shot (all oscilloscopes)"
+COMPARE_MODE = "Compare two shots"
 
 
 @dataclass
 class ScopeTabState:
     """State and widgets for one oscilloscope tab."""
 
-    figure: Figure
-    canvas: FigureCanvasQTAgg
     channel_combo: QComboBox
     message_label: QLabel
+    web_view: QWebEngineView
 
 
 class ShotComparisonGUI(QMainWindow):
-    """PySide GUI to select shots and compare channels per oscilloscope tab."""
+    """PySide GUI with interactive Plotly charts for oscilloscope shots."""
 
     def __init__(
         self,
@@ -58,7 +57,7 @@ class ShotComparisonGUI(QMainWindow):
     ) -> None:
         super().__init__()
         self.setWindowTitle("Oscilloscope shot comparison")
-        self.resize(1200, 800)
+        self.resize(1400, 900)
 
         self.config = config or PipelineConfig(input_dir=Path("osc_data"), output_dir=Path("outputs"))
         self.loader = loader_factory(self.config.input_dir)
@@ -66,109 +65,155 @@ class ShotComparisonGUI(QMainWindow):
 
         self._records_cache: dict[Path, object] = {}
         self.shots = sorted(self.index.keys(), key=int)
-        self.scopes = sorted({scope for scopes in self.index.values() for scope in scopes})
         self.tabs: dict[str, ScopeTabState] = {}
 
-        self.shot_a_combo = QComboBox()
-        self.shot_b_combo = QComboBox()
+        self.mode_combo = QComboBox()
+        self.single_shot_combo = QComboBox()
+        self.compare_shot_a_combo = QComboBox()
+        self.compare_shot_b_combo = QComboBox()
         self.scope_hint_label = QLabel()
+        self.plot_all_button = QPushButton("Plot all oscilloscopes")
         self.notebook = QTabWidget()
 
         self._build_layout()
-        self._populate_tabs()
-        self._refresh_scope_hint()
+        self._wire_events()
+        self._refresh_from_selection()
 
     def _build_layout(self) -> None:
         central = QWidget(self)
         self.setCentralWidget(central)
 
-        layout = QVBoxLayout(central)
-        controls_layout = QHBoxLayout()
+        layout = QHBoxLayout(central)
 
-        controls_layout.addWidget(QLabel("Shot A"))
-        self.shot_a_combo.addItems(self.shots)
-        controls_layout.addWidget(self.shot_a_combo)
+        # Left options panel
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
 
-        controls_layout.addWidget(QLabel("Shot B"))
-        self.shot_b_combo.addItems(self.shots)
+        left_layout.addWidget(QLabel("Plot mode"))
+        self.mode_combo.addItems([SINGLE_SHOT_MODE, COMPARE_MODE])
+        left_layout.addWidget(self.mode_combo)
+
+        left_layout.addWidget(QLabel("Single-shot selection"))
+        self.single_shot_combo.addItems(self.shots)
+        left_layout.addWidget(self.single_shot_combo)
+
+        left_layout.addWidget(QLabel("Compare selection: Shot A"))
+        self.compare_shot_a_combo.addItems(self.shots)
+        left_layout.addWidget(self.compare_shot_a_combo)
+
+        left_layout.addWidget(QLabel("Compare selection: Shot B"))
+        self.compare_shot_b_combo.addItems(self.shots)
         if len(self.shots) > 1:
-            self.shot_b_combo.setCurrentIndex(1)
-        controls_layout.addWidget(self.shot_b_combo)
+            self.compare_shot_b_combo.setCurrentIndex(1)
+        left_layout.addWidget(self.compare_shot_b_combo)
 
-        controls_layout.addWidget(self.scope_hint_label)
-        controls_layout.addStretch()
+        self.scope_hint_label.setWordWrap(True)
+        left_layout.addWidget(self.scope_hint_label)
 
-        self.shot_a_combo.currentTextChanged.connect(self._on_shot_change)
-        self.shot_b_combo.currentTextChanged.connect(self._on_shot_change)
+        left_layout.addWidget(self.plot_all_button)
+        left_layout.addStretch()
 
-        layout.addLayout(controls_layout)
-        layout.addWidget(self.notebook)
+        layout.addWidget(left_panel, 0)
+        layout.addWidget(self.notebook, 1)
 
-    def _populate_tabs(self) -> None:
-        for scope in self.scopes:
+    def _wire_events(self) -> None:
+        self.mode_combo.currentTextChanged.connect(lambda _text: self._refresh_from_selection())
+        self.single_shot_combo.currentTextChanged.connect(lambda _text: self._refresh_from_selection())
+        self.compare_shot_a_combo.currentTextChanged.connect(lambda _text: self._refresh_from_selection())
+        self.compare_shot_b_combo.currentTextChanged.connect(lambda _text: self._refresh_from_selection())
+        self.plot_all_button.clicked.connect(self.plot_all_tabs)
+
+    def _refresh_from_selection(self) -> None:
+        is_single = self.mode_combo.currentText() == SINGLE_SHOT_MODE
+        self.single_shot_combo.setEnabled(is_single)
+        self.compare_shot_a_combo.setEnabled(not is_single)
+        self.compare_shot_b_combo.setEnabled(not is_single)
+
+        self._refresh_scope_hint()
+        self._rebuild_tabs()
+
+    def _active_shots(self) -> list[str]:
+        if self.mode_combo.currentText() == SINGLE_SHOT_MODE:
+            return [self.single_shot_combo.currentText()]
+        return [self.compare_shot_a_combo.currentText(), self.compare_shot_b_combo.currentText()]
+
+    def _active_scopes(self) -> list[str]:
+        active_shots = self._active_shots()
+        if not active_shots:
+            return []
+        if len(active_shots) == 1:
+            return available_oscilloscopes_for_shot(self.index, active_shots[0])
+        return common_oscilloscopes_for_shots(self.index, active_shots)
+
+    def _refresh_scope_hint(self) -> None:
+        active_shots = self._active_shots()
+        if len(active_shots) == 1:
+            shot = active_shots[0]
+            scopes = available_oscilloscopes_for_shot(self.index, shot)
+            self.scope_hint_label.setText(
+                f"Mode: {SINGLE_SHOT_MODE}\n"
+                f"Shot {shot} available scopes: {', '.join(scopes) or 'none'}"
+            )
+            return
+
+        shot_a, shot_b = active_shots
+        scopes_a = available_oscilloscopes_for_shot(self.index, shot_a)
+        scopes_b = available_oscilloscopes_for_shot(self.index, shot_b)
+        common = common_oscilloscopes_for_shots(self.index, active_shots)
+        self.scope_hint_label.setText(
+            f"Mode: {COMPARE_MODE}\n"
+            f"Shot {shot_a} scopes: {', '.join(scopes_a) or 'none'}\n"
+            f"Shot {shot_b} scopes: {', '.join(scopes_b) or 'none'}\n"
+            f"Common: {', '.join(common) or 'none'}"
+        )
+
+    def _rebuild_tabs(self) -> None:
+        self.notebook.clear()
+        self.tabs.clear()
+
+        for scope in self._active_scopes():
             tab = QWidget()
             tab_layout = QVBoxLayout(tab)
 
             top_bar = QHBoxLayout()
             top_bar.addWidget(QLabel("Channel"))
+
             channel_combo = QComboBox()
+            channels = self._channels_for_scope(scope)
+            channel_combo.addItems(channels)
             top_bar.addWidget(channel_combo)
 
-            msg_label = QLabel("Select Shot A/B and click 'Plot comparison'.")
-            top_bar.addWidget(msg_label)
+            message = QLabel("Ready to plot." if channels else "No available channels for current selection.")
+            top_bar.addWidget(message)
             top_bar.addStretch()
 
-            plot_button = QPushButton("Plot comparison")
+            plot_button = QPushButton("Plot")
+            plot_button.setEnabled(bool(channels))
             plot_button.clicked.connect(lambda _checked=False, s=scope: self.plot_for_scope(s))
             top_bar.addWidget(plot_button)
 
             tab_layout.addLayout(top_bar)
 
-            fig = Figure(figsize=(8.5, 5.5), dpi=100)
-            canvas = FigureCanvasQTAgg(fig)
-            tab_layout.addWidget(canvas)
+            web_view = QWebEngineView()
+            tab_layout.addWidget(web_view)
 
             self.tabs[scope] = ScopeTabState(
-                figure=fig,
-                canvas=canvas,
                 channel_combo=channel_combo,
-                message_label=msg_label,
+                message_label=message,
+                web_view=web_view,
             )
             self.notebook.addTab(tab, scope)
 
-        self._refresh_channels_for_all_tabs()
-
-    def _on_shot_change(self, _text: str) -> None:
-        self._refresh_scope_hint()
-        self._refresh_channels_for_all_tabs()
-
-    def _refresh_scope_hint(self) -> None:
-        shot_a = self.shot_a_combo.currentText()
-        shot_b = self.shot_b_combo.currentText()
-        scopes_a = available_oscilloscopes_for_shot(self.index, shot_a)
-        scopes_b = available_oscilloscopes_for_shot(self.index, shot_b)
-        common = common_oscilloscopes_for_shots(self.index, [shot_a, shot_b])
-        self.scope_hint_label.setText(
-            f"Shot {shot_a} scopes: {', '.join(scopes_a) or 'none'} | "
-            f"Shot {shot_b} scopes: {', '.join(scopes_b) or 'none'} | "
-            f"Common: {', '.join(common) or 'none'}"
-        )
-
-    def _refresh_channels_for_all_tabs(self) -> None:
-        for scope in self.scopes:
-            channels = self._channels_for_scope(scope)
-            state = self.tabs[scope]
-            state.channel_combo.blockSignals(True)
-            state.channel_combo.clear()
-            state.channel_combo.addItems(channels)
-            state.channel_combo.blockSignals(False)
-            if channels:
-                state.message_label.setText("Ready to plot.")
-            else:
-                state.message_label.setText("This oscilloscope is not available in both selected shots.")
+        self.plot_all_tabs()
 
     def _channels_for_scope(self, scope: str) -> list[str]:
-        shot_a, shot_b = self.shot_a_combo.currentText(), self.shot_b_combo.currentText()
+        active_shots = self._active_shots()
+        if len(active_shots) == 1:
+            shot = active_shots[0]
+            record = self._load_record(self.index[shot][scope])
+            return sorted(record.channels.keys())
+
+        shot_a, shot_b = active_shots
         if scope not in self.index.get(shot_a, {}) or scope not in self.index.get(shot_b, {}):
             return []
 
@@ -181,30 +226,73 @@ class ShotComparisonGUI(QMainWindow):
             self._records_cache[path] = self.loader.load_file(path)
         return self._records_cache[path]
 
+    def _build_plotly_figure(self, scope: str, channel_name: str) -> go.Figure:
+        active_shots = self._active_shots()
+        fig = go.Figure()
+
+        if len(active_shots) == 1:
+            shot = active_shots[0]
+            record = self._load_record(self.index[shot][scope])
+            fig.add_trace(
+                go.Scatter(
+                    x=record.time,
+                    y=record.channels[channel_name],
+                    mode="lines",
+                    name=f"Shot {shot}",
+                )
+            )
+            axis_labels = record.metadata.get("axis_labels", ("Time [s]", "Signal [a.u.]"))
+            fig.update_layout(
+                template="plotly_dark",
+                title=f"Shot {shot} - {scope} ({channel_name})",
+                xaxis_title=axis_labels[0],
+                yaxis_title=axis_labels[1],
+            )
+            return fig
+
+        shot_a, shot_b = active_shots
+        record_a = self._load_record(self.index[shot_a][scope])
+        record_b = self._load_record(self.index[shot_b][scope])
+        fig.add_trace(
+            go.Scatter(
+                x=record_a.time,
+                y=record_a.channels[channel_name],
+                mode="lines",
+                name=f"Shot {shot_a}",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=record_b.time,
+                y=record_b.channels[channel_name],
+                mode="lines",
+                name=f"Shot {shot_b}",
+            )
+        )
+        axis_labels = record_a.metadata.get("axis_labels", ("Time [s]", "Signal [a.u.]"))
+        fig.update_layout(
+            template="plotly_dark",
+            title=f"Shot {shot_a} vs {shot_b} - {scope} ({channel_name})",
+            xaxis_title=axis_labels[0],
+            yaxis_title=axis_labels[1],
+        )
+        return fig
+
     def plot_for_scope(self, scope: str) -> None:
         state = self.tabs[scope]
         channel_name = state.channel_combo.currentText()
         if not channel_name:
-            state.message_label.setText("No common channel available for this scope and shot pair.")
+            state.message_label.setText("No channel available for this selection.")
             return
 
-        shot_a, shot_b = self.shot_a_combo.currentText(), self.shot_b_combo.currentText()
-        record_a = self._load_record(self.index[shot_a][scope])
-        record_b = self._load_record(self.index[shot_b][scope])
+        fig = self._build_plotly_figure(scope, channel_name)
+        html = fig.to_html(full_html=False, include_plotlyjs="cdn")
+        state.web_view.setHtml(html)
+        state.message_label.setText("Interactive plot updated.")
 
-        state.figure.clear()
-        ax = state.figure.add_subplot(111)
-        ax.plot(record_a.time, record_a.channels[channel_name], label=f"Shot {shot_a}", alpha=0.75)
-        ax.plot(record_b.time, record_b.channels[channel_name], label=f"Shot {shot_b}", alpha=0.75)
-        axis_labels = record_a.metadata.get("axis_labels", ("Time [s]", "Signal [a.u.]"))
-        ax.set_title(f"{scope} - channel {channel_name}")
-        ax.set_xlabel(axis_labels[0])
-        ax.set_ylabel(axis_labels[1])
-        ax.legend(loc="best")
-        state.figure.tight_layout()
-        state.canvas.draw()
-
-        state.message_label.setText(f"Plotted shots {shot_a} vs {shot_b} on {scope}.")
+    def plot_all_tabs(self) -> None:
+        for scope in self.tabs:
+            self.plot_for_scope(scope)
 
 
 def launch_shot_comparison_gui(data_dir: Path = Path("osc_data")) -> None:
