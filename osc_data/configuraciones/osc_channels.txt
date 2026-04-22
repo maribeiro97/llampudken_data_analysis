@@ -1,0 +1,41 @@
+tds3054
+ch1 monitor voltage norte optico 
+ch2 monitor voltage sur optico 
+ch3 luz LGT
+ch4 trigger unidad de delay negra
+
+tds4104
+ch1 Rogowski retorno, R2
+ch2 AXUV1
+ch3 AXUV5
+ch4 AXUV6
+
+tds5054
+ch1 Rogowski retorno, R1
+ch2 monitor capacitivo, ala norte
+ch3 monitor capacitivo, camara
+ch4 monitor capacitivo, ala sur
+
+tds7104
+ch1 rogowski principal, factor 0.5
+ch2 rogowski principal integrada, factor 0.5, 1494 kA/(mVns)
+ch3 PCD
+ch4 timing MCP
+
+tls216
+ch1 NO
+ch2 NO
+ch3 NO
+ch4 Rogowski retorno, R3
+ch5 monitor voltaje norte electrico
+ch6 monitor voltaje sur electrico
+ch7 NO
+ch8 line switch norte optico
+ch9 line switch sur optico
+ch10 pin3 norte optico
+ch11 pin3 sur optico
+ch12 luz LGT
+ch13 output unidad delay LGT optico
+ch14 pin1 norte
+ch15 pin1 sur
+ch16 trigger unidad de delay negra

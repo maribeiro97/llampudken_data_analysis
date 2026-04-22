@@ -1,0 +1,41 @@
+tds3054
+pin3 norte optico
+pin3 sur optico
+luz LGT
+trigger P400
+
+dpo4104
+laser 2, 1J
+laser 1 (chico)
+PCD 12.5um Ti
+MCP 1
+
+tds5054
+Rogowski retorno, R2
+dVtln
+dVtlc
+dVtls
+
+tds7104
+rogowski principal, factor 0.5
+rogowski principal integrada, factor 0.5, 1494 kA/(mVns)
+Sonda Iones SES-5  
+Sonda Iones SES-6
+
+tds5104
+Rogowski retorno, R3
+Vnorte electrico
+Vsur electrico
+ch4 luz LGT
+
+dpo5054
+line switch norte optico
+line switch sur optico
+pin1 norte
+pin1 sur
+
+tds684b
+Sonda Iones NEE-3
+Sonda Iones NEE-4
+Sonda Iones Z-1
+Sonda Iones Z-2

@@ -1,0 +1,53 @@
+dpo4104
+SR750
+SR500
+laser 1J
+laser shadow
+
+tds5054
+dR2
+dVtln
+dVtlc
+dVtls
+
+tds7104
+rogowski principal, factor 0.5
+rogowski principal integrada, factor 0.5, 1494 kA/(mVns)
+PCD 12.5um Ti 
+MCP 1
+
+tds5104
+dR3
+dR1
+antena
+AXUV-2 25um Be
+
+dpo5054
+driver bobina
+NA
+NA
+NA
+
+tds684b
+clock
+I inyector
+BD pin
+laser 1 trigger
+
+tls216
+pin3 norte
+pin3 sur
+pin1 norte
+pin1 sur
+Vnorte electrico
+Vsur eléctrico
+line switch norte optico
+line switch sur optico
+luz LGT
+luz LGT 2
+trigger P400
+NA
+NA
+NA
+NA
+NA

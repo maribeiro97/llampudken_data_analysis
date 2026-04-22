@@ -1,0 +1,41 @@
+tds3054
+pin3 norte
+pin3 sur
+luz LGT
+trigger P400
+
+dpo4104
+dR1
+ICCD
+laser 1J
+MCP 1
+
+tds5054
+dR2
+dVtln
+dVtlc
+dVtls
+
+tds7104
+rogowski principal, factor 0.5
+rogowski principal integrada, factor 0.5, 1494 kA/(mVns)
+AXUV 2 20um Be  
+PCD 12.5um Ti
+
+tds5104
+dR3
+Vnorte electrico
+Vsur electrico
+luz LGT
+
+dpo5054
+line switch norte optico
+line switch sur optico
+pin1 norte
+pin1 sur
+
+tds684b
+clock
+I inyector
+BD pin
+laser 1 trigger
