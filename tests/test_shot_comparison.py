@@ -7,7 +7,7 @@ from osc_analysis.models import SignalRecord
 from osc_analysis.plotting import FigureBuilder
 
 
-def _make_record(shot: str, phase: float) -> SignalRecord:
+def _make_record(shot: str, phase: float, delay_offset_s: float = 0.0) -> SignalRecord:
     time = np.linspace(0.0, 1.0, 1000)
     signal = np.sin(2 * np.pi * 5 * time + phase)
     return SignalRecord(
@@ -18,7 +18,7 @@ def _make_record(shot: str, phase: float) -> SignalRecord:
         time=time,
         channels={"CH1": signal},
         sampling_rate_hz=1000.0,
-        metadata={},
+        metadata={"channel_delay_offsets_s": [delay_offset_s]},
     )
 
 
@@ -37,6 +37,38 @@ def test_compare_metrics_returns_expected_keys() -> None:
         "area_delta",
     }
     assert metrics["peak_delta"] > 0.0
+
+
+def test_overlay_alignment_uses_per_record_delay_offsets() -> None:
+    builder = FigureBuilder(PlotStyleConfig())
+    t_a = np.linspace(0.0, 1.0, 1000)
+    t_b = np.linspace(0.02, 1.02, 1000)
+    signal = np.sin(2 * np.pi * 5 * t_a)
+
+    shot_a = SignalRecord(
+        shot_number="1001",
+        oscilloscope_id="dpo5054",
+        date_code="20240410",
+        file_path=Path("/tmp/1001.txt"),
+        time=t_a,
+        channels={"CH1": signal},
+        sampling_rate_hz=1000.0,
+        metadata={"channel_delay_offsets_s": [0.0]},
+    )
+    shot_b = SignalRecord(
+        shot_number="1002",
+        oscilloscope_id="dpo5054",
+        date_code="20240410",
+        file_path=Path("/tmp/1002.txt"),
+        time=t_b,
+        channels={"CH1": signal},
+        sampling_rate_hz=1000.0,
+        metadata={"channel_delay_offsets_s": [0.02]},
+    )
+
+    metrics = builder.compute_shot_comparison_metrics(shot_a, shot_b, channel_name="CH1")
+    assert metrics["correlation"] > 0.999
+    assert metrics["rms_delta"] < 1e-3
 
 
 def test_range_average_returns_ci_bands() -> None:

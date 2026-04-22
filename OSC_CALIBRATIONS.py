@@ -233,10 +233,14 @@ def get_osc_config(osc_id: str, shot_number: int | None = None) -> dict:
 
     scoped = OSCS_BY_RANGE.get(range_id, {}).get(normalized_id)
     if scoped is not None:
-        return copy.deepcopy(scoped)
+        config = copy.deepcopy(scoped)
+        config['range_id'] = range_id
+        return config
 
     fallback = DEFAULT_OSCS.get(normalized_id, {'channels': [], 'times': [], 'axes_labels': ['Time [s]', 'Voltage [V]']})
-    return copy.deepcopy(fallback)
+    config = copy.deepcopy(fallback)
+    config['range_id'] = range_id
+    return config
 
 
 OSCS_BY_RANGE, RANGE_START_SHOTS = _build_oscs_by_range()
