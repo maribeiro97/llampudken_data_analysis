@@ -219,7 +219,11 @@ class ShotComparisonGUI(QMainWindow):
         )
 
     def _rebuild_tabs(self) -> None:
-        self.notebook.clear()
+        while self.notebook.count() > 0:
+            widget = self.notebook.widget(0)
+            self.notebook.removeTab(0)
+            if widget is not None:
+                widget.deleteLater()
         self.tabs.clear()
         logger.info("Rebuilding oscilloscope tabs.")
 
