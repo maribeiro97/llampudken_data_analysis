@@ -4,7 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.io as pio
 import datetime
-from OSC_CALIBRATIONS import OSCS
+from OSC_CALIBRATIONS import get_osc_config
 from scipy.signal import savgol_filter
 from scipy.integrate import cumulative_trapezoid
 
@@ -25,7 +25,7 @@ class OscilloscopeReader():
         file_data = np.loadtxt(file_name)
         time_arr = file_data[:, 0]
         osc_info = self.id_osc(file_name)
-        osc_params = OSCS[osc_info['osc_id']]
+        osc_params = get_osc_config(osc_info['osc_id'], shot_number=int(osc_info['shot_nmbr']))
         channel_names = osc_params['channels']
         axes_labels = osc_params['axes_labels']
         for col, label in zip(file_data.T[1:], channel_names):
@@ -63,7 +63,8 @@ class OscilloscopeReader():
 
     def current_rogowski_ext_int(self, rogowski_v, time):
         smooth_signal = savgol_filter(rogowski_v, 100, 9)
-        rogowski_i = smooth_signal * OSCS['tds7104']['calibration_factors']
+        tds7104_cfg = get_osc_config('tds7104')
+        rogowski_i = smooth_signal * np.array(tds7104_cfg.get('calibration_factors', [1.0]))
         return rogowski_i
 
     def find_shots(self, shot_list):
@@ -103,16 +104,20 @@ class OscilloscopeReader():
             time_90 = time[curr_no_ext_90_ind]
             #Rising Time
             time_rise = (time_90 - time_10) * 10 ** 9 #[ns]
-            ch_times = obtain_ch_times(time_0)
+            ch_times = self.obtain_ch_times(shot_nmbr, time_0)
             return 
     
-    def obtain_ch_times(self, time_0):
-        for j in self.sorted_shots[shot_nmbr]:                
+    def obtain_ch_times(self, shot_nmbr, time_0, reference_channel_index=1):
+        for j in self.sorted_shots[str(shot_nmbr)]:                
             osc_time = np.loadtxt(j)[0]
             channel_times = np.array([osc_time] * 4)
             j_info = self.id_osc(j)
-            reference_delay = OSCS['tds7104']['times'][1] #tds7104 ch2 delay
-            cable_delays = np.array(OSCS[j_info['osc_id']]['times'])
+            shot_number = int(j_info['shot_nmbr']) if j_info['shot_nmbr'].isdigit() else None
+            reference_cfg = get_osc_config('tds7104', shot_number=shot_number)
+            reference_delays = np.array(reference_cfg.get('times', [0.0]))
+            reference_delay = reference_delays[reference_channel_index] if reference_channel_index < len(reference_delays) else 0.0
+            osc_cfg = get_osc_config(j_info['osc_id'], shot_number=shot_number)
+            cable_delays = np.array(osc_cfg.get('times', [0.0] * len(channel_times)))
             channel_times = [channel_times[i] - time_0 - (cable_delays[i] - reference_delay) for i in range(len(channel_times))]
         return channel_times     
 

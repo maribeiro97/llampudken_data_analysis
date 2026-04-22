@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from osc_analysis.osc_calibrations import OSCS
+from osc_analysis.osc_calibrations import get_osc_config
 
-REFERENCE_DELAY_NS = OSCS["tds7104"]["times"][1]
+REFERENCE_DELAY_NS = get_osc_config("tds7104").get("times", [0.0, 0.0])[1]
 
 
 @dataclass(frozen=True)
@@ -13,10 +13,11 @@ class OscCalibration:
     axis_labels: tuple[str, str]
     calibration_factors: list[float]
     channel_delay_ns: list[float]
+    calibration_range_id: str
 
 
-def get_calibration(oscilloscope_id: str, channel_count: int) -> OscCalibration:
-    raw = OSCS.get(oscilloscope_id, {})
+def get_calibration(oscilloscope_id: str, channel_count: int, shot_number: int | None = None) -> OscCalibration:
+    raw = get_osc_config(oscilloscope_id, shot_number=shot_number)
 
     channel_names = list(raw.get("channels", []))
     if len(channel_names) < channel_count:
@@ -44,6 +45,7 @@ def get_calibration(oscilloscope_id: str, channel_count: int) -> OscCalibration:
         axis_labels=axis_labels,
         calibration_factors=calibration_factors,
         channel_delay_ns=delay_ns,
+        calibration_range_id=str(raw.get("range_id", "default")),
     )
 
 

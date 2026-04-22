@@ -102,13 +102,13 @@ class FigureBuilder:
         chosen_channel = channel_name or self._resolve_channel_name(record_a, record_b)
 
         ax.plot(
-            record_a.time,
+            self._channel_time(record_a, chosen_channel),
             record_a.channels[chosen_channel],
             label=f"Shot {record_a.shot_number}",
             alpha=0.65,
         )
         ax.plot(
-            record_b.time,
+            self._channel_time(record_b, chosen_channel),
             record_b.channels[chosen_channel],
             label=f"Shot {record_b.shot_number}",
             alpha=0.65,
@@ -319,7 +319,7 @@ class FigureBuilder:
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(
-                x=record_a.time,
+                x=self._channel_time(record_a, chosen_channel),
                 y=record_a.channels[chosen_channel],
                 mode="lines",
                 name=f"Shot {record_a.shot_number}",
@@ -327,7 +327,7 @@ class FigureBuilder:
         )
         fig.add_trace(
             go.Scatter(
-                x=record_b.time,
+                x=self._channel_time(record_b, chosen_channel),
                 y=record_b.channels[chosen_channel],
                 mode="lines",
                 name=f"Shot {record_b.shot_number}",
@@ -480,15 +480,17 @@ class FigureBuilder:
         record_b: SignalRecord,
         channel_name: str,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        start = max(float(record_a.time[0]), float(record_b.time[0]))
-        end = min(float(record_a.time[-1]), float(record_b.time[-1]))
+        time_a = FigureBuilder._channel_time(record_a, channel_name)
+        time_b = FigureBuilder._channel_time(record_b, channel_name)
+        start = max(float(time_a[0]), float(time_b[0]))
+        end = min(float(time_a[-1]), float(time_b[-1]))
         if start >= end:
             return np.array([]), np.array([]), np.array([])
 
-        sample_count = int(min(record_a.time.size, record_b.time.size))
+        sample_count = int(min(time_a.size, time_b.size))
         common_t = np.linspace(start, end, sample_count)
-        a_interp = np.interp(common_t, record_a.time, record_a.channels[channel_name])
-        b_interp = np.interp(common_t, record_b.time, record_b.channels[channel_name])
+        a_interp = np.interp(common_t, time_a, record_a.channels[channel_name])
+        b_interp = np.interp(common_t, time_b, record_b.channels[channel_name])
         return common_t, a_interp, b_interp
 
     @staticmethod
@@ -505,20 +507,32 @@ class FigureBuilder:
         records: list[SignalRecord],
         channel_name: str,
     ) -> tuple[np.ndarray, np.ndarray]:
-        start = max(float(record.time[0]) for record in records)
-        end = min(float(record.time[-1]) for record in records)
+        aligned_times = [FigureBuilder._channel_time(record, channel_name) for record in records]
+        start = max(float(time[0]) for time in aligned_times)
+        end = min(float(time[-1]) for time in aligned_times)
         if start >= end:
             raise ValueError("Selected records do not have overlapping time support.")
 
-        sample_count = min(record.time.size for record in records)
+        sample_count = min(time.size for time in aligned_times)
         common_t = np.linspace(start, end, sample_count)
         stacked = np.vstack(
             [
-                np.interp(common_t, record.time, record.channels[channel_name])
-                for record in records
+                np.interp(common_t, record_time, record.channels[channel_name])
+                for record_time, record in zip(aligned_times, records)
             ]
         )
         return common_t, stacked
+
+    @staticmethod
+    def _channel_time(record: SignalRecord, channel_name: str) -> np.ndarray:
+        channels = list(record.channels.keys())
+        try:
+            channel_index = channels.index(channel_name)
+        except ValueError:
+            channel_index = 0
+        offsets = record.metadata.get("channel_delay_offsets_s", [0.0] * len(channels))
+        offset = offsets[channel_index] if channel_index < len(offsets) else 0.0
+        return record.time - float(offset)
 
     @staticmethod
     def _save_matplotlib_outputs(fig: plt.Figure, out_path: Path) -> None:
