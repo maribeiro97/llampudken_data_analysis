@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+import numpy as np
 import plotly.graph_objects as go
 
 from osc_analysis.config import PipelineConfig
@@ -40,6 +41,8 @@ except ImportError as exc:  # pragma: no cover - platform dependent
 SINGLE_SHOT_MODE = "Single shot (all oscilloscopes)"
 COMPARE_MODE = "Compare two shots"
 ALL_CHANNELS_OPTION = "All channels"
+INDIVIDUAL_SHOTS_OPTION = "Plot individual shot traces"
+AVERAGE_WITH_CI_OPTION = "Plot average with 95% CI"
 logger = logging.getLogger(__name__)
 
 
@@ -80,6 +83,7 @@ class ShotComparisonGUI(QMainWindow):
         self.compare_shot_a_combo = QComboBox()
         self.compare_shot_b_combo = QComboBox()
         self.scope_hint_label = QLabel()
+        self.plot_mode_combo = QComboBox()
         self.plot_all_button = QPushButton("Plot all oscilloscopes")
         self.notebook = QTabWidget()
 
@@ -118,6 +122,10 @@ class ShotComparisonGUI(QMainWindow):
         self.scope_hint_label.setWordWrap(True)
         left_layout.addWidget(self.scope_hint_label)
 
+        left_layout.addWidget(QLabel("Trace mode"))
+        self.plot_mode_combo.addItems([INDIVIDUAL_SHOTS_OPTION, AVERAGE_WITH_CI_OPTION])
+        left_layout.addWidget(self.plot_mode_combo)
+
         left_layout.addWidget(self.plot_all_button)
         left_layout.addStretch()
 
@@ -129,6 +137,7 @@ class ShotComparisonGUI(QMainWindow):
         self.single_shot_combo.currentTextChanged.connect(lambda _text: self._refresh_from_selection())
         self.compare_shot_a_combo.currentTextChanged.connect(lambda _text: self._refresh_from_selection())
         self.compare_shot_b_combo.currentTextChanged.connect(lambda _text: self._refresh_from_selection())
+        self.plot_mode_combo.currentTextChanged.connect(lambda _text: self.plot_all_tabs())
         self.plot_all_button.clicked.connect(self.plot_all_tabs)
 
     def _refresh_from_selection(self) -> None:
@@ -245,6 +254,43 @@ class ShotComparisonGUI(QMainWindow):
             return sorted(record.channels.keys())
         return [selected_channel]
 
+    @staticmethod
+    def _compute_average_with_ci(records: list, channel_name: str, confidence_z: float = 1.96) -> dict[str, np.ndarray | int]:
+        if not records:
+            raise ValueError("At least one record is required to compute averages.")
+
+        start = max(float(record.time[0]) for record in records)
+        end = min(float(record.time[-1]) for record in records)
+        if end <= start:
+            raise ValueError("Selected shots do not share an overlapping time window.")
+
+        common_time = records[0].time
+        common_time = common_time[(common_time >= start) & (common_time <= end)]
+        if common_time.size < 2:
+            raise ValueError("Need at least two common samples to compute average traces.")
+
+        aligned = [np.interp(common_time, record.time, record.channels[channel_name]) for record in records]
+        stacked = np.vstack(aligned)
+        mean_curve = np.mean(stacked, axis=0)
+
+        if stacked.shape[0] == 1:
+            lower_ci = mean_curve
+            upper_ci = mean_curve
+        else:
+            std_curve = np.std(stacked, axis=0, ddof=1)
+            se_curve = std_curve / np.sqrt(stacked.shape[0])
+            ci_half_width = confidence_z * se_curve
+            lower_ci = mean_curve - ci_half_width
+            upper_ci = mean_curve + ci_half_width
+
+        return {
+            "time": common_time,
+            "mean": mean_curve,
+            "lower_ci": lower_ci,
+            "upper_ci": upper_ci,
+            "sample_count": stacked.shape[0],
+        }
+
     def _load_record(self, path: Path):
         if path not in self._records_cache:
             self._records_cache[path] = self.loader.load_file(path)
@@ -275,32 +321,66 @@ class ShotComparisonGUI(QMainWindow):
             )
             return fig
 
-        shot_a, shot_b = active_shots
-        record_a = self._load_record(self.index[shot_a][scope])
-        record_b = self._load_record(self.index[shot_b][scope])
-        for selected_channel in self._selected_channels(record_a, channel_name):
-            if selected_channel not in record_b.channels:
+        selected_records = [(shot, self._load_record(self.index[shot][scope])) for shot in active_shots]
+        reference_record = selected_records[0][1]
+        for selected_channel in self._selected_channels(reference_record, channel_name):
+            channel_records = [record for _shot, record in selected_records if selected_channel in record.channels]
+            if not channel_records:
                 continue
-            fig.add_trace(
-                go.Scatter(
-                    x=record_a.time,
-                    y=record_a.channels[selected_channel],
-                    mode="lines",
-                    name=f"Shot {shot_a} - {selected_channel}",
+
+            if self.plot_mode_combo.currentText() == AVERAGE_WITH_CI_OPTION:
+                stats = self._compute_average_with_ci(channel_records, selected_channel)
+                fig.add_trace(
+                    go.Scatter(
+                        x=stats["time"],
+                        y=stats["mean"],
+                        mode="lines",
+                        name=f"Average - {selected_channel} (n={stats['sample_count']})",
+                        line=dict(color="#55A868", width=2),
+                    )
                 )
-            )
-            fig.add_trace(
-                go.Scatter(
-                    x=record_b.time,
-                    y=record_b.channels[selected_channel],
-                    mode="lines",
-                    name=f"Shot {shot_b} - {selected_channel}",
+                if stats["sample_count"] > 1:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=stats["time"],
+                            y=stats["lower_ci"],
+                            mode="lines",
+                            line=dict(width=0),
+                            showlegend=False,
+                            hoverinfo="skip",
+                        )
+                    )
+                    fig.add_trace(
+                        go.Scatter(
+                            x=stats["time"],
+                            y=stats["upper_ci"],
+                            mode="lines",
+                            fill="tonexty",
+                            fillcolor="rgba(85, 168, 104, 0.25)",
+                            line=dict(width=0),
+                            name=f"95% CI - {selected_channel}",
+                            hoverinfo="skip",
+                        )
+                    )
+                continue
+
+            for shot, record in selected_records:
+                if selected_channel not in record.channels:
+                    continue
+                fig.add_trace(
+                    go.Scatter(
+                        x=record.time,
+                        y=record.channels[selected_channel],
+                        mode="lines",
+                        name=f"Shot {shot} - {selected_channel}",
+                    )
                 )
-            )
-        axis_labels = record_a.metadata.get("axis_labels", ("Time [s]", "Signal [a.u.]"))
+
+        shot_label = " vs ".join(active_shots)
+        axis_labels = reference_record.metadata.get("axis_labels", ("Time [s]", "Signal [a.u.]"))
         fig.update_layout(
             template="plotly_dark",
-            title=f"Shot {shot_a} vs {shot_b} - {scope} ({channel_name})",
+            title=f"Shots {shot_label} - {scope} ({channel_name})",
             xaxis_title=axis_labels[0],
             yaxis_title=axis_labels[1],
         )
