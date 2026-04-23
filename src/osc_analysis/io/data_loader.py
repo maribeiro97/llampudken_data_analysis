@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -13,9 +14,26 @@ class DataLoader:
 
     def __init__(self, data_root: Path) -> None:
         self.data_root = Path(data_root)
+        self._logger = logging.getLogger(__name__)
 
     def list_data_files(self) -> list[Path]:
-        return sorted(self.data_root.glob("*.txt"))
+        return sorted(path for path in self.data_root.glob("*.txt") if self._is_plot_scope_file(path))
+
+    def _is_plot_scope_file(self, path: Path) -> bool:
+        token: str
+        try:
+            _, _, token = self.parse_filename(path)
+        except ValueError:
+            parts = path.stem.split("_")
+            if not parts:
+                self._logger.debug("Skipping data file with unexpected filename format: %s", path.name)
+                return False
+            token = parts[-1]
+            if token == path.stem:
+                self._logger.debug("Skipping data file with unexpected filename format: %s", path.name)
+                return False
+
+        return token.lower() not in {"ipr", "lpr"}
 
     def parse_filename(self, file_path: Path) -> tuple[str, str, str]:
         stem = file_path.stem

@@ -27,3 +27,15 @@ def test_available_and_common_oscilloscopes() -> None:
 
     common = common_oscilloscopes_for_shots(index, ["1558", "1559", "1560"])
     assert set(common) == {"dpo4104", "dpo5054", "tds3054", "tds5054", "tds5104", "tds684b", "tds7104"}
+
+
+def test_build_shot_scope_index_excludes_ipr_and_lpr_files(tmp_path: Path) -> None:
+    (tmp_path / "shot2001_20240410_dpo4104.txt").touch()
+    (tmp_path / "shot2001_20240410_Ipr.txt").touch()
+    (tmp_path / "shot2001_20240410_lpr.txt").touch()
+
+    loader = DataLoader(tmp_path)
+    index = build_shot_scope_index(loader)
+
+    assert "2001" in index
+    assert set(index["2001"]) == {"dpo4104"}
