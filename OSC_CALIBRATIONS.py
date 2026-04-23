@@ -5,6 +5,22 @@ import re
 import warnings
 from pathlib import Path
 
+_BASE_DIR = Path(__file__).resolve().parent
+_DEFAULT_CHANNELS_FILE = Path('osc_data/configuraciones/osc_channels.txt')
+_DEFAULT_TIMES_FILE = Path('osc_data/tiempo_cables/tiempo_cables.txt')
+
+# Threshold maps are maintained independently because channels and cable-time
+# updates can land on different shots.
+CHANNEL_FILE_THRESHOLDS: dict[int, Path] = {
+    229: Path('osc_data/configuraciones/osc_channels_229.txt'),
+    516: Path('osc_data/configuraciones/osc_channels_516.txt'),
+}
+
+TIME_FILE_THRESHOLDS: dict[int, Path] = {
+    229: Path('osc_data/tiempo_cables/tiempo_cables.txt'),
+    516: Path('osc_data/tiempo_cables/tiempo_cables_516.txt'),
+}
+
 DEFAULT_OSCS = {
     'dpo4104': {
         'channels': ['dR1', 'ICCD QE', 'Laser 1.0[J]', 'ICCD andor'],
@@ -158,103 +174,82 @@ def _sized_list(values: list, target_len: int, fill_value):
     return data
 
 
-def _build_oscs_by_range() -> tuple[dict[str, dict[str, dict]], list[int]]:
-    base_dir = Path(__file__).resolve().parent / 'osc_data'
-    channels_dir = base_dir / 'configuraciones'
-    times_dir = base_dir / 'tiempo_cables'
-
-    channel_files = sorted(channels_dir.glob('osc_channels*.txt'))
-    time_files = sorted(times_dir.glob('tiempo_cables*.txt'))
-
-    channels_by_range: dict[str, dict[str, list[str]]] = {}
-    channel_file_by_range: dict[str, str] = {}
-    for path in channel_files:
-        range_id = _extract_range_id(path)
-        channels_by_range.setdefault(range_id, _parse_osc_channels_file(path))
-        channel_file_by_range.setdefault(range_id, path.name)
-
-    times_by_range: dict[str, dict[str, list[float]]] = {}
-    time_file_by_range: dict[str, str] = {}
-    for path in time_files:
-        range_id = _extract_range_id(path)
-        times_by_range.setdefault(range_id, _parse_tiempo_cables_file(path))
-        time_file_by_range.setdefault(range_id, path.name)
-
-    range_ids = set(channels_by_range) | set(times_by_range)
-    range_ids.add('default')
-
-    oscs_by_range: dict[str, dict[str, dict]] = {}
-    for range_id in range_ids:
-        merged: dict[str, dict] = copy.deepcopy(DEFAULT_OSCS)
-        channel_map = channels_by_range.get(range_id, channels_by_range.get('default', {}))
-        time_map = times_by_range.get(range_id, times_by_range.get('default', {}))
-        selected_channel_file = channel_file_by_range.get(range_id, channel_file_by_range.get('default', ''))
-        selected_time_file = time_file_by_range.get(range_id, time_file_by_range.get('default', ''))
-
-        osc_ids = set(merged) | set(channel_map) | set(time_map)
-        for osc_id in osc_ids:
-            config = copy.deepcopy(merged.get(osc_id, {}))
-            config.setdefault('axes_labels', ['Time [s]', 'Voltage [V]'])
-
-            channels = channel_map.get(osc_id, config.get('channels', []))
-            times = time_map.get(osc_id, config.get('times', []))
-            calibration_factors = config.get('calibration_factors', [1.0] * len(channels))
-
-            channel_count = len(channels) if channels else len(times)
-            if channel_count == 0:
-                channel_count = len(calibration_factors)
-            if channel_count == 0:
-                channel_count = 4
-
-            channels = _sized_list(list(channels), channel_count, '')
-            channels = [label if label else f'ch{idx + 1}' for idx, label in enumerate(channels)]
-
-            times = _sized_list(list(times), channel_count, 0.0)
-            calibration_factors = _sized_list(list(calibration_factors), channel_count, 1.0)
-
-            config['channels'] = channels
-            config['times'] = times
-            config['calibration_factors'] = calibration_factors
-            config['calibration_source_files'] = {
-                'channels': selected_channel_file,
-                'times': selected_time_file,
-            }
-            merged[osc_id] = config
-
-        oscs_by_range[range_id] = merged
-
-    numeric_ranges = sorted(int(range_id) for range_id in range_ids if range_id.isdigit())
-    return oscs_by_range, numeric_ranges
+def _resolve_threshold_path(shot_number: int, threshold_map: dict[int, Path], default_path: Path) -> Path:
+    selected = default_path
+    for threshold in sorted(threshold_map):
+        if shot_number >= threshold:
+            selected = threshold_map[threshold]
+    return selected
 
 
-def _resolve_range_id(shot_number: int | None) -> str:
-    if shot_number is None:
-        return 'default'
+def resolve_calibration_files(shot_number: int) -> tuple[Path, Path]:
+    shot = int(shot_number)
+    channels_rel_path = _resolve_threshold_path(shot, CHANNEL_FILE_THRESHOLDS, _DEFAULT_CHANNELS_FILE)
+    times_rel_path = _resolve_threshold_path(shot, TIME_FILE_THRESHOLDS, _DEFAULT_TIMES_FILE)
+    return (_BASE_DIR / channels_rel_path, _BASE_DIR / times_rel_path)
 
-    for start_shot in reversed(CALIBRATION_RANGE_START_SHOTS):
-        if shot_number >= start_shot:
-            return str(start_shot)
-    return 'default'
+
+def _build_osc_config_map(channels_path: Path, times_path: Path) -> dict[str, dict]:
+    merged: dict[str, dict] = copy.deepcopy(DEFAULT_OSCS)
+    channel_map = _parse_osc_channels_file(channels_path) if channels_path.exists() else {}
+    time_map = _parse_tiempo_cables_file(times_path) if times_path.exists() else {}
+
+    osc_ids = set(merged) | set(channel_map) | set(time_map)
+    for osc_id in osc_ids:
+        config = copy.deepcopy(merged.get(osc_id, {}))
+        config.setdefault('axes_labels', ['Time [s]', 'Voltage [V]'])
+
+        channels = channel_map.get(osc_id, config.get('channels', []))
+        times = time_map.get(osc_id, config.get('times', []))
+        calibration_factors = config.get('calibration_factors', [1.0] * len(channels))
+
+        channel_count = len(channels) if channels else len(times)
+        if channel_count == 0:
+            channel_count = len(calibration_factors)
+        if channel_count == 0:
+            channel_count = 4
+
+        channels = _sized_list(list(channels), channel_count, '')
+        channels = [label if label else f'ch{idx + 1}' for idx, label in enumerate(channels)]
+
+        times = _sized_list(list(times), channel_count, 0.0)
+        calibration_factors = _sized_list(list(calibration_factors), channel_count, 1.0)
+
+        config['channels'] = channels
+        config['times'] = times
+        config['calibration_factors'] = calibration_factors
+        merged[osc_id] = config
+
+    return merged
 
 
 def get_osc_config(osc_id: str, shot_number: int | None = None) -> dict:
     normalized_id = _normalize_osc_id(osc_id)
-    range_id = _resolve_range_id(shot_number)
+    scoped = None
+    config_tag = 'default'
+    if shot_number is not None:
+        try:
+            channels_path, times_path = resolve_calibration_files(int(shot_number))
+            config_tag = f'{channels_path.name}|{times_path.name}'
+            cache_key = (channels_path, times_path)
+            if cache_key not in _CONFIG_CACHE:
+                _CONFIG_CACHE[cache_key] = _build_osc_config_map(channels_path, times_path)
+            scoped = _CONFIG_CACHE[cache_key].get(normalized_id)
+        except (TypeError, ValueError):
+            scoped = None
 
-    scoped = OSCS_BY_RANGE.get(range_id, {}).get(normalized_id)
     if scoped is not None:
         config = copy.deepcopy(scoped)
-        config['range_id'] = range_id
+        config['range_id'] = config_tag
         return config
 
     fallback = DEFAULT_OSCS.get(normalized_id, {'channels': [], 'times': [], 'axes_labels': ['Time [s]', 'Voltage [V]']})
     config = copy.deepcopy(fallback)
-    config['range_id'] = range_id
+    config['range_id'] = config_tag
     return config
 
 
-OSCS_BY_RANGE, RANGE_START_SHOTS = _build_oscs_by_range()
-CALIBRATION_RANGE_START_SHOTS = [229, 516, 1493, 1723, 2103]
+_CONFIG_CACHE: dict[tuple[Path, Path], dict[str, dict]] = {}
 
 # Backward compatibility with older consumers.
 OSCS = copy.deepcopy(DEFAULT_OSCS)
