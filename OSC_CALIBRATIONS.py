@@ -224,43 +224,79 @@ def _discover_rules(
     return sorted(rules.items(), key=lambda item: item[0])
 
 
-def discover_channel_rules() -> list[tuple[float, Path]]:
-    folder = _BASE_DIR / 'osc_data/configuraciones'
+def discover_threshold_files(pattern: str, base_name: str) -> list[tuple[float, Path]]:
+    definitions = {
+        'osc_channels': {
+            'folder': _BASE_DIR / 'osc_data/configuraciones',
+            'default_path': _DEFAULT_CHANNELS_FILE,
+            'parser': _parse_osc_channels_file,
+            'validator': _is_valid_channels_payload,
+            'explicit_thresholds': _EXTRA_CHANNEL_THRESHOLDS,
+        },
+        'tiempo_cables': {
+            'folder': _BASE_DIR / 'osc_data/tiempo_cables',
+            'default_path': _DEFAULT_TIMES_FILE,
+            'parser': _parse_tiempo_cables_file,
+            'validator': _is_valid_times_payload,
+            'explicit_thresholds': _EXTRA_TIME_THRESHOLDS,
+        },
+    }
+    if base_name not in definitions:
+        raise ValueError(f'Unsupported calibration base name: {base_name}')
+
+    definition = definitions[base_name]
+    candidates = sorted((_BASE_DIR / '.').glob(pattern))
+    folder = definition['folder']
+    if candidates:
+        folder = candidates[0].parent
     return _discover_rules(
         folder=folder,
-        base_name='osc_channels',
-        parser=_parse_osc_channels_file,
-        validator=_is_valid_channels_payload,
-        explicit_thresholds=_EXTRA_CHANNEL_THRESHOLDS,
+        base_name=base_name,
+        parser=definition['parser'],
+        validator=definition['validator'],
+        explicit_thresholds=definition['explicit_thresholds'],
     )
+
+
+def discover_channel_rules() -> list[tuple[float, Path]]:
+    return discover_threshold_files(pattern='osc_data/configuraciones/osc_channels*.txt', base_name='osc_channels')
 
 
 def discover_time_rules() -> list[tuple[float, Path]]:
-    folder = _BASE_DIR / 'osc_data/tiempo_cables'
-    return _discover_rules(
-        folder=folder,
-        base_name='tiempo_cables',
-        parser=_parse_tiempo_cables_file,
-        validator=_is_valid_times_payload,
-        explicit_thresholds=_EXTRA_TIME_THRESHOLDS,
-    )
+    return discover_threshold_files(pattern='osc_data/tiempo_cables/tiempo_cables*.txt', base_name='tiempo_cables')
 
 
-def _resolve_from_rules(shot_number: int, rules: list[tuple[float, Path]], default_path: Path) -> Path:
-    selected = default_path
+def select_file_for_shot(rules: list[tuple[float, Path]], shot_number: int) -> tuple[float, Path]:
+    selected_threshold = _BASELINE_THRESHOLD
+    selected_path = rules[0][1] if rules else Path()
     for threshold, path in rules:
         if shot_number >= threshold:
-            selected = path
+            selected_threshold = threshold
+            selected_path = path
         else:
             break
-    return selected
+    return selected_threshold, selected_path
 
 
 def resolve_calibration_files(shot_number: int) -> tuple[Path, Path]:
     shot = int(shot_number)
-    channels_rel_path = _resolve_from_rules(shot, CHANNEL_RULES, _DEFAULT_CHANNELS_FILE)
-    times_rel_path = _resolve_from_rules(shot, TIME_RULES, _DEFAULT_TIMES_FILE)
+    _, channels_rel_path = select_file_for_shot(CHANNEL_RULES, shot)
+    _, times_rel_path = select_file_for_shot(TIME_RULES, shot)
     return (_BASE_DIR / channels_rel_path, _BASE_DIR / times_rel_path)
+
+
+def resolve_calibration_debug_metadata(shot_number: int) -> dict[str, object]:
+    shot = int(shot_number)
+    channel_threshold, channels_rel_path = select_file_for_shot(CHANNEL_RULES, shot)
+    time_threshold, times_rel_path = select_file_for_shot(TIME_RULES, shot)
+    return {
+        'selected_channel_file': channels_rel_path.name,
+        'selected_cable_time_file': times_rel_path.name,
+        'selected_thresholds': {
+            'channels': channel_threshold,
+            'times': time_threshold,
+        },
+    }
 
 
 def _build_osc_config_map(channels_path: Path, times_path: Path) -> dict[str, dict]:
@@ -317,15 +353,21 @@ def get_osc_config(osc_id: str, shot_number: int | None = None) -> dict:
     if scoped is not None:
         config = copy.deepcopy(scoped)
         config['range_id'] = config_tag
+        config['calibration_selection_metadata'] = {}
         config['calibration_source_files'] = {
             'channels': channels_path.name,
             'times': times_path.name,
         }
+        try:
+            config['calibration_selection_metadata'] = resolve_calibration_debug_metadata(int(shot_number))
+        except (TypeError, ValueError):
+            config['calibration_selection_metadata'] = {}
         return config
 
     fallback = DEFAULT_OSCS.get(normalized_id, {'channels': [], 'times': [], 'axes_labels': ['Time [s]', 'Voltage [V]']})
     config = copy.deepcopy(fallback)
     config['range_id'] = config_tag
+    config['calibration_selection_metadata'] = {}
     if shot_number is not None:
         try:
             channels_path, times_path = resolve_calibration_files(int(shot_number))
@@ -333,8 +375,10 @@ def get_osc_config(osc_id: str, shot_number: int | None = None) -> dict:
                 'channels': channels_path.name,
                 'times': times_path.name,
             }
+            config['calibration_selection_metadata'] = resolve_calibration_debug_metadata(int(shot_number))
         except (TypeError, ValueError):
             config['calibration_source_files'] = {}
+            config['calibration_selection_metadata'] = {}
     else:
         config['calibration_source_files'] = {}
     return config
