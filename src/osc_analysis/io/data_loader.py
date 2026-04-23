@@ -74,5 +74,6 @@ class DataLoader:
                 "calibration_factors": calibration.calibration_factors,
                 "calibration_range_id": calibration.calibration_range_id,
                 "calibration_source_files": calibration.calibration_source_files,
+                "calibration_selection_metadata": calibration.calibration_selection_metadata,
             },
         )

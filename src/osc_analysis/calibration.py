@@ -15,6 +15,7 @@ class OscCalibration:
     channel_delay_ns: list[float]
     calibration_range_id: str
     calibration_source_files: dict[str, str]
+    calibration_selection_metadata: dict[str, object]
 
 
 def get_calibration(oscilloscope_id: str, channel_count: int, shot_number: int | None = None) -> OscCalibration:
@@ -48,6 +49,7 @@ def get_calibration(oscilloscope_id: str, channel_count: int, shot_number: int |
         channel_delay_ns=delay_ns,
         calibration_range_id=str(raw.get("range_id", "default")),
         calibration_source_files=dict(raw.get("calibration_source_files", {})),
+        calibration_selection_metadata=dict(raw.get("calibration_selection_metadata", {})),
     )
 
 

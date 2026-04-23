@@ -72,3 +72,8 @@ def test_loader_includes_calibration_source_files_metadata(tmp_path: Path) -> No
         "channels": "osc_channels_559.txt",
         "times": "tiempo_cables_559.txt",
     }
+    assert record.metadata["calibration_selection_metadata"] == {
+        "selected_channel_file": "osc_channels_559.txt",
+        "selected_cable_time_file": "tiempo_cables_559.txt",
+        "selected_thresholds": {"channels": 559, "times": 559},
+    }
