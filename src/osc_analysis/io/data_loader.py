@@ -42,10 +42,10 @@ class DataLoader:
         return shot_number, date_code, oscilloscope_id
 
     def load_file(self, file_path: Path) -> SignalRecord:
-        data = np.loadtxt(file_path)
-        time = data[:, 0]
         shot_number, date_code, oscilloscope_id = self.parse_filename(file_path)
         shot_number_int = int(shot_number) if shot_number.isdigit() else None
+        data = np.loadtxt(file_path)
+        time = data[:, 0]
         calibration = get_calibration(
             oscilloscope_id,
             channel_count=data.shape[1] - 1,
@@ -73,5 +73,6 @@ class DataLoader:
                 "channel_delay_offsets_s": delay_offsets_s(calibration.channel_delay_ns),
                 "calibration_factors": calibration.calibration_factors,
                 "calibration_range_id": calibration.calibration_range_id,
+                "calibration_source_files": calibration.calibration_source_files,
             },
         )
