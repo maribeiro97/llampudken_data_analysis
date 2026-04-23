@@ -167,14 +167,18 @@ def _build_oscs_by_range() -> tuple[dict[str, dict[str, dict]], list[int]]:
     time_files = sorted(times_dir.glob('tiempo_cables*.txt'))
 
     channels_by_range: dict[str, dict[str, list[str]]] = {}
+    channel_file_by_range: dict[str, str] = {}
     for path in channel_files:
         range_id = _extract_range_id(path)
-        channels_by_range[range_id] = _parse_osc_channels_file(path)
+        channels_by_range.setdefault(range_id, _parse_osc_channels_file(path))
+        channel_file_by_range.setdefault(range_id, path.name)
 
     times_by_range: dict[str, dict[str, list[float]]] = {}
+    time_file_by_range: dict[str, str] = {}
     for path in time_files:
         range_id = _extract_range_id(path)
-        times_by_range[range_id] = _parse_tiempo_cables_file(path)
+        times_by_range.setdefault(range_id, _parse_tiempo_cables_file(path))
+        time_file_by_range.setdefault(range_id, path.name)
 
     range_ids = set(channels_by_range) | set(times_by_range)
     range_ids.add('default')
@@ -182,8 +186,10 @@ def _build_oscs_by_range() -> tuple[dict[str, dict[str, dict]], list[int]]:
     oscs_by_range: dict[str, dict[str, dict]] = {}
     for range_id in range_ids:
         merged: dict[str, dict] = copy.deepcopy(DEFAULT_OSCS)
-        channel_map = channels_by_range.get(range_id, {})
-        time_map = times_by_range.get(range_id, {})
+        channel_map = channels_by_range.get(range_id, channels_by_range.get('default', {}))
+        time_map = times_by_range.get(range_id, times_by_range.get('default', {}))
+        selected_channel_file = channel_file_by_range.get(range_id, channel_file_by_range.get('default', ''))
+        selected_time_file = time_file_by_range.get(range_id, time_file_by_range.get('default', ''))
 
         osc_ids = set(merged) | set(channel_map) | set(time_map)
         for osc_id in osc_ids:
@@ -209,6 +215,10 @@ def _build_oscs_by_range() -> tuple[dict[str, dict[str, dict]], list[int]]:
             config['channels'] = channels
             config['times'] = times
             config['calibration_factors'] = calibration_factors
+            config['calibration_source_files'] = {
+                'channels': selected_channel_file,
+                'times': selected_time_file,
+            }
             merged[osc_id] = config
 
         oscs_by_range[range_id] = merged
@@ -221,7 +231,7 @@ def _resolve_range_id(shot_number: int | None) -> str:
     if shot_number is None:
         return 'default'
 
-    for start_shot in reversed(RANGE_START_SHOTS):
+    for start_shot in reversed(CALIBRATION_RANGE_START_SHOTS):
         if shot_number >= start_shot:
             return str(start_shot)
     return 'default'
@@ -244,6 +254,7 @@ def get_osc_config(osc_id: str, shot_number: int | None = None) -> dict:
 
 
 OSCS_BY_RANGE, RANGE_START_SHOTS = _build_oscs_by_range()
+CALIBRATION_RANGE_START_SHOTS = [229, 516, 1493, 1723, 2103]
 
 # Backward compatibility with older consumers.
 OSCS = copy.deepcopy(DEFAULT_OSCS)
