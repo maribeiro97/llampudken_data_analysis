@@ -43,12 +43,12 @@ def test_calibration_source_files_for_shot_300_and_600() -> None:
     cal_600 = get_calibration("dpo4104", channel_count=4, shot_number=600)
 
     assert cal_300.calibration_source_files == {
-        "channels": "osc_channels_229.txt",
+        "channels": "osc_channels_249.txt",
         "times": "tiempo_cables.txt",
     }
     assert cal_600.calibration_source_files == {
-        "channels": "osc_channels_516.txt",
-        "times": "tiempo_cables_516.txt",
+        "channels": "osc_channels_559.txt",
+        "times": "tiempo_cables_559.txt",
     }
 
 
@@ -69,6 +69,6 @@ def test_loader_includes_calibration_source_files_metadata(tmp_path: Path) -> No
     record = loader.load_file(file_path)
 
     assert record.metadata["calibration_source_files"] == {
-        "channels": "osc_channels_516.txt",
-        "times": "tiempo_cables_516.txt",
+        "channels": "osc_channels_559.txt",
+        "times": "tiempo_cables_559.txt",
     }
